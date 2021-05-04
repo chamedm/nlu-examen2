@@ -1,14 +1,3 @@
-require('dotenv').config();
-
-const express = require('express')
-const app = express();
-const port = 8000;
-
-const bodyParser = require('body-parser');
-app.use(bodyParser.urlencoded({ extended: true }));
-app.use(bodyParser.json());
-
-
 const NaturalLanguageUnderstandingV1 = require('ibm-watson/natural-language-understanding/v1');
 const { IamAuthenticator } = require('ibm-watson/auth');
 
@@ -20,38 +9,63 @@ const naturalLanguageUnderstanding = new NaturalLanguageUnderstandingV1({
   serviceUrl: process.env.URL,
 });
 
+exports.handler = async (event, context, callback) => {
+    const { historial_clinico } = event;
 
-app.post('/', (req, res) => {
-  let textToAnalyze = req.body;
-  console.log(textToAnalyze)
-  const analyzeParams = {
-    'text': textToAnalyze.text,
-    'features': {
-      'entities': {
-        'emotion': true,
-        'sentiment': true,
-        'limit': 2,
-      },
-      'keywords': {
-        'emotion': true,
-        'sentiment': true,
-        'limit': 2,
-      },
-    },
-  };
+    try {
+        const analyzeParams = {
+            'text': historial_clinico,
+            'features': {
+              'entities': {
+                'emotion': true,
+                'sentiment': true,
+                'limit': 5,
+              },
+              'keywords': {
+                'emotion': true,
+                'sentiment': true,
+                'limit': 5,
+              },
+            },
+        };
 
-  naturalLanguageUnderstanding.analyze(analyzeParams)
-  .then(analysisResults => {
-    return JSON.stringify(analysisResults, null, 2);
-  }).then(analisysJSON => {
-    res.send(analisysJSON)
-  })
-  .catch(err => {
-    console.log('error:', err);
-  });
 
-});
+        const analysisResults = await naturalLanguageUnderstanding.analyze(analyzeParams);
+        const resultObj = analysisResults.result;
+        const keywords = {};
+        const entities = {};
 
-app.listen(port, () => {
-  console.log(`Example app listening on port ${port}!`)
-});
+        resultObj.keywords.forEach(e => {
+            keywords[e.text] = {
+                "sentimiento": e.sentiment.label,
+                "relevancia": e.relevance,
+                "repeticiones": e.count,
+                "emocion": e.emotion,
+                "confianza": e.confidence,
+            }
+        });
+
+        resultObj.entities.forEach(e => {
+            entities[e.text] = {
+                tipo: e.type,
+                sentimiento: e.sentiment.label,
+                relevancia: e.relevance,
+                emocion: e.emotion,
+                repeticiones: e.count,
+                confianza: e.confidence
+            }
+        });
+
+        const res = {
+            lenguaje_texto: resultObj.language,
+            palabras_clave: resultObj.keywords.map(e => e.text),
+            entidades: resultObj.entities.map(e => e.text),
+            palabras_clave_desc: keywords,
+            entidades_desc: entities,
+        }
+
+        return res;
+    } catch (err) {
+        throw new Error("Error al procesar. ", err);
+    }
+};
